@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "project": "@iotemy/n8n-nodes-lubelogger",
+    "builtAgainst": {
+      "lubeloggerVersion": "v1.7.1",
+      "sourceCommit": "d5a5832045267ac3d9c31addb280c774120ab0a3",
+      "sourceRepo": "https://github.com/hargata/lubelog",
+      "docsRepo": "https://github.com/hargata/lubelog_docs",
+      "specFile": "docs/lubelogger-api-doc.json (pinned copy of wwwroot/defaults/api.json served at GET /api)",
+      "specIsOpenApi": false,
+      "fetchDate": "2026-08-20",
+      "targetInstanceVersion": "PENDING - verify via GET /api/version against the target instance"
+    },
+    "confirmationLegend": {
+      "spec": "listed in LubeLogger's own machine-readable api.json (served at /api)",
+      "docs": "stated in lubelog_docs (docs.lubelogger.com)",
+      "source": "read directly from the v1.7.1 controllers/models in hargata/lubelog",
+      "observed": "verified with a live request against the target instance"
+    },
+    "auth": {
+      "methods": [
+        {
+          "type": "apiKey",
+          "header": "x-api-key",
+          "altQueryParam": "apiKey",
+          "roles": ["Viewer (view only)", "Editor (view/add/edit)", "Manager (view/add/edit/delete)"],
+          "confirmed": ["docs", "source"],
+          "notes": "Preferred. Scoped roles enforced by APIKeyFilter; insufficient role returns 403 with JSON OperationResponse. Only valid on /api paths."
+        },
+        {
+          "type": "basic",
+          "header": "Authorization: Basic base64(user:pass)",
+          "confirmed": ["docs", "source"],
+          "notes": "Full account credentials; username/password must not contain ':'. SSO users must use API keys instead."
+        }
+      ],
+      "noAuthMode": "If the instance runs with EnableAuth=false, every request is treated as root; credentials are ignored (source: Middleware/Authen.cs).",
+      "apiEnableToggle": "NONE. There is no 'enable API' setting; /api is always routed. (source: Program.cs, Authen.cs)",
+      "unauthenticated401": "API-path 401 responses have an EMPTY body with WWW-Authenticate: Basic; non-API paths redirect (302) to /Login/Index. (source: Authen.cs HandleChallengeAsync)"
+    },
+    "conventions": {
+      "invariantHeader": "Send header 'culture-invariant' (presence only, no value) => dates serialize as yyyy-MM-dd, numerics as JSON numbers, booleans as JSON booleans. Without it everything is a locale-formatted string. (docs + source: TypeConverter.cs, StaticHelper.GetInvariantOption)",
+      "dateInput": "Body/query dates parsed with server-culture DateTime.Parse; ISO yyyy-MM-dd is unambiguous in every .NET culture and is what the node always sends. Unix epoch seconds also accepted for JSON number date fields (source: FromDateOptional.Read).",
+      "postPutEncoding": "JSON (Consumes application/json), form-data, or x-www-form-urlencoded. Node uses JSON.",
+      "mutationEnvelope": "Mutations return OperationResponse { success: bool, message: string, data?: object }. add returns data.recordId (data.vehicleId for vehicles). GETs return bare arrays/objects.",
+      "updateIsFullReplace": "CONFIRMED DATA-LOSS HAZARD (source: every API update handler): update replaces the entire record. Omitted extraFields, files, tags, notes are overwritten with empty values. The node therefore does read-merge-write on update.",
+      "pagination": "NONE on any endpoint. Controllers materialize the full record list and filter in memory (source: all API controllers). Node offers client-side limit only.",
+      "errorShape": "Failures return OperationResponse JSON with 400/403/500. 401 is empty-bodied. Unknown paths and reverse-proxy errors can return HTML; the node detects non-JSON bodies.",
+      "units": "Odometer/fuel-volume units are the instance's configured units (Use Imperial Calculation / Use UK MPG Calculation user settings). NOT exposed by /api/info (source: ServerInformation.cs = version, locale, currencySymbol, decimalSeparator, dateFormat only). The node does not convert units.",
+      "webhooks": "LubeLogger DOES have an outgoing webhook (single server-wide URL set manually in Server Settings) and a SignalR WebSocket at /api/ws. Neither is API-registrable per workflow, so the trigger node polls. (docs: Advanced/Webhook.md; source: Logic/Event)"
+    }
+  },
+  "endpoints": [
+    { "resource": "system", "operation": "health", "method": "GET", "path": "/health", "auth": "anonymous", "confirmed": ["source"], "v1": "internal (not exposed)", "notes": "Returns { version, status, checks }." },
+    { "resource": "system", "operation": "whoami", "method": "GET", "path": "/api/whoami", "auth": "any", "confirmed": ["spec", "source"], "v1": "internal (credential test fallback)", "notes": "Returns { username, emailAddress, isAdmin, isRoot }." },
+    { "resource": "system", "operation": "info", "method": "GET", "path": "/api/info", "auth": "any", "confirmed": ["spec", "source"], "v1": "internal (locale probe)", "notes": "Returns { currentVersion, locale, currencySymbol, decimalSeparator, dateFormat }. No unit settings." },
+    { "resource": "system", "operation": "version", "method": "GET", "path": "/api/version", "auth": "any", "confirmed": ["spec", "source"], "v1": "internal (version pin)", "notes": "?checkForUpdate=true also queries GitHub." },
+
+    { "resource": "vehicle", "operation": "getAll", "method": "GET", "path": "/api/vehicles", "auth": "Viewer", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Bare array of Vehicle entities. Also used for loadOptions and credentialTest." },
+    { "resource": "vehicle", "operation": "getInfo", "method": "GET", "path": "/api/vehicle/info", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed (also serves 'get')", "notes": "?vehicleId= optional. ALWAYS returns an array of VehicleInfo { vehicleData, reminder counts by urgency, nextReminder, per-type record counts+costs, lastReportedOdometer, plan progress counts }." },
+    { "resource": "vehicle", "operation": "adjustedOdometer", "method": "GET", "path": "/api/vehicle/adjustedodometer", "auth": "Viewer (collaborator)", "confirmed": ["spec", "source"], "v1": "skipped (niche)", "notes": "Applies vehicle OdometerDifference/Multiplier to a raw reading." },
+    { "resource": "vehicle", "operation": "create", "method": "POST", "path": "/api/vehicles/add", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: year, make, model, identifier, fuelType (Gasoline|Diesel|Electric). identifier='LicensePlate' requires licensePlate; other identifiers must exist in extraFields. Returns data.vehicleId." },
+    { "resource": "vehicle", "operation": "update", "method": "PUT", "path": "/api/vehicles/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "Full replace incl. extraFields/tags. Cannot unset IsDiesel/IsElectric back to Gasoline via API (switch only sets flags; source AddVehicle/UpdateVehicle)." },
+    { "resource": "vehicle", "operation": "delete", "method": "DELETE", "path": "/api/vehicles/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed (destructive warning)", "notes": "?id=. Deletes the vehicle AND all its records." },
+
+    { "resource": "serviceRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/servicerecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "?vehicleId= required; optional id, startDate, endDate, tags. /all variant across garage also exposed as 'all vehicles' toggle." },
+    { "resource": "serviceRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/servicerecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed (via 'All vehicles' option)", "notes": "" },
+    { "resource": "serviceRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/servicerecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: date, odometer, description, cost. GenericRecordExportModel body." },
+    { "resource": "serviceRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/servicerecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "Full replace." },
+    { "resource": "serviceRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/servicerecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+
+    { "resource": "repairRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/repairrecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Same shape/params as service records (GenericRecordExportModel). Internally 'collision' records." },
+    { "resource": "repairRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/repairrecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "repairRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/repairrecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: date, odometer, description, cost." },
+    { "resource": "repairRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/repairrecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "" },
+    { "resource": "repairRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/repairrecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+
+    { "resource": "upgradeRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/upgraderecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Same shape/params as service records." },
+    { "resource": "upgradeRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/upgraderecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "upgradeRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/upgraderecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: date, odometer, description, cost." },
+    { "resource": "upgradeRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/upgraderecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "" },
+    { "resource": "upgradeRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/upgraderecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+
+    { "resource": "taxRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/taxrecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "TaxRecordExportModel: no odometer field." },
+    { "resource": "taxRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/taxrecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "taxRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/taxrecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: date, description, cost." },
+    { "resource": "taxRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/taxrecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "" },
+    { "resource": "taxRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/taxrecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+    { "resource": "taxRecord", "operation": "checkRecurring", "method": "GET", "path": "/api/vehicle/taxrecords/check", "auth": "root", "confirmed": ["spec"], "v1": "skipped (admin/root maintenance)", "notes": "Updates outdated recurring tax records." },
+
+    { "resource": "gasRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/gasrecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Extra query params useMPG, useUKMPG override economy calc. Response includes computed fuelEconomy per record. GasRecordExportModel." },
+    { "resource": "gasRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/gasrecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "gasRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/gasrecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Required: date, odometer, fuelConsumed, cost, isFillToFull, missedFuelUp. EV-only: startingSoc/endingSoc (default 20/80 if omitted). If the user's EnableAutoOdometerInsert setting is on, the server also inserts an odometer record." },
+    { "resource": "gasRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/gasrecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "Full replace; same required fields plus id." },
+    { "resource": "gasRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/gasrecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed (destructive warning re mileage)", "notes": "?id=. Deleting changes computed economy of neighbouring records." },
+
+    { "resource": "odometerRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/odometerrecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Returns initialOdometer + odometer + equipmentRecordId. Auto-converts InitialMileage if unset." },
+    { "resource": "odometerRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/odometerrecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "odometerRecord", "operation": "getLatest", "method": "GET", "path": "/api/vehicle/odometerrecords/latest", "auth": "Viewer (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Returns a BARE JSON number (max mileage across all record types for the vehicle)." },
+    { "resource": "odometerRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/odometerrecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: date, odometer. initialOdometer defaults to the previous record's reading. Optional query autoIncludeEquipment=true. equipmentRecordId = space-separated ids." },
+    { "resource": "odometerRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/odometerrecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "Required: id, date, initialOdometer, odometer." },
+    { "resource": "odometerRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/odometerrecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+    { "resource": "odometerRecord", "operation": "recalculate", "method": "PUT", "path": "/api/vehicle/odometerrecords/recalculate", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "skipped (maintenance)", "notes": "Recomputes distance (InitialMileage) chain." },
+
+    { "resource": "reminder", "operation": "getAll", "method": "GET", "path": "/api/vehicle/reminders", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "?vehicleId= required; optional id, tags, urgencies (repeatable: NotUrgent|Urgent|VeryUrgent|PastDue). Returns COMPUTED urgency + dueDays + dueDistance + userMetric. Urgent/VeryUrgent thresholds are instance-configured." },
+    { "resource": "reminder", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/reminders/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "reminder", "operation": "create", "method": "POST", "path": "/api/vehicle/reminders/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: description, metric (Date|Odometer|Both); dueDate and/or dueOdometer per metric. NO extraFields/files on reminders. Cannot set recurring via API." },
+    { "resource": "reminder", "operation": "update", "method": "PUT", "path": "/api/vehicle/reminders/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write for tags/notes)", "notes": "Full replace of description/metric/date/odometer/notes/tags." },
+    { "resource": "reminder", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/reminders/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=." },
+    { "resource": "reminder", "operation": "markComplete", "method": null, "path": null, "auth": null, "confirmed": ["source"], "v1": "NOT AVAILABLE - no such endpoint exists", "notes": "The web UI's 'mark done' (recurring reminder push-forward) is not exposed via /api. Deliberately not faked." },
+    { "resource": "reminder", "operation": "sendEmails", "method": "GET", "path": "/api/vehicle/reminders/send", "auth": "root", "confirmed": ["spec", "source"], "v1": "skipped (root-only, SMTP side effect)", "notes": "" },
+    { "resource": "reminder", "operation": "calendar", "method": "GET", "path": "/api/calendar", "auth": "Viewer", "confirmed": ["spec", "docs", "source"], "v1": "skipped (ICS file, not JSON)", "notes": "" },
+
+    { "resource": "planRecord", "operation": "getAll", "method": "GET", "path": "/api/vehicle/planrecords", "auth": "Viewer (collaborator)", "confirmed": ["spec", "docs", "source"], "v1": "exposed", "notes": "Date filters apply to dateCreated. No tags on plan records. Returns type/priority/progress + dateCreated/dateModified." },
+    { "resource": "planRecord", "operation": "getAllVehicles", "method": "GET", "path": "/api/vehicle/planrecords/all", "auth": "Viewer", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "" },
+    { "resource": "planRecord", "operation": "create", "method": "POST", "path": "/api/vehicle/planrecords/add", "auth": "Editor (collaborator)", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "Required: description, cost, type (ServiceRecord|RepairRecord|UpgradeRecord), priority (Critical|Normal|Low), progress (Backlog|InProgress|Testing). Progress=Done is REJECTED by the API (400)." },
+    { "resource": "planRecord", "operation": "update", "method": "PUT", "path": "/api/vehicle/planrecords/update", "auth": "Editor", "confirmed": ["spec", "source"], "v1": "exposed (read-merge-write)", "notes": "Same constraints; cannot move to Done via API." },
+    { "resource": "planRecord", "operation": "delete", "method": "DELETE", "path": "/api/vehicle/planrecords/delete", "auth": "Manager", "confirmed": ["spec", "source"], "v1": "exposed", "notes": "?id=. Restores requisitioned supplies." },
+
+    { "resource": "document", "operation": "upload", "method": "POST", "path": "/api/documents/upload", "auth": "any authenticated", "confirmed": ["spec", "source"], "v1": "exposed (attachment support)", "notes": "multipart/form-data field 'documents' (repeatable). Returns [{ name, location }]; pass location into a record's files[]." },
+
+    { "resource": "supplyRecord", "operation": "*", "method": "GET/POST/PUT/DELETE", "path": "/api/vehicle/supplyrecords[...]", "auth": "per pattern", "confirmed": ["spec", "source"], "v1": "deliberately skipped in v1", "notes": "Out of requested v1 scope; same CRUD pattern." },
+    { "resource": "note", "operation": "*", "method": "GET/POST/PUT/DELETE", "path": "/api/vehicle/notes[...]", "auth": "per pattern", "confirmed": ["spec", "source"], "v1": "deliberately skipped in v1", "notes": "" },
+    { "resource": "equipmentRecord", "operation": "*", "method": "GET/POST/PUT/DELETE", "path": "/api/vehicle/equipmentrecords[...]", "auth": "per pattern", "confirmed": ["spec", "source"], "v1": "deliberately skipped in v1", "notes": "" },
+    { "resource": "admin", "operation": "makebackup/tempfiles/cleanup/demo-restore", "method": "GET", "path": "/api/makebackup, /api/tempfiles, /api/cleanup, /api/demo/restore", "auth": "root", "confirmed": ["spec", "docs", "source"], "v1": "deliberately skipped (root-only server maintenance)", "notes": "" }
+  ]
+}
