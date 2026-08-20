@@ -2,12 +2,17 @@
 
 Items Phase 0 could not settle from the spec, docs, or source, or that need live verification against the target instance. Everything here is tracked; nothing here has been guessed at in code.
 
-## Pending live verification (blocked on instance access)
+## Resolved by the observed pass (2026-08-20)
 
-1. **Target instance version** — record `GET /api/version`. All source reading was pinned to v1.7.1; if the instance is older, some endpoints (e.g. vehicle delete/update, `/api/info`, SoC fields) may be missing.
-2. **Every request/response shape marked only `spec+source`** in `API.md` needs an `observed` confirmation pass: vehicles list, vehicle info, one full CRUD cycle per record type, odometer latest, reminder urgency output, document upload, and the 400/401/403 error shapes.
-3. **Basic-auth vs API-key behaviour on this instance** — confirm which the instance has configured (`EnableAuth`?), generate an API key if possible, and confirm Viewer/Editor/Manager role enforcement matches source reading.
-4. **Locale of the instance** — `GET /api/info`; confirms what non-invariant responses would look like (the node always sends `culture-invariant`, but the credential test should still work either way).
+1. ~~Target instance version~~ — **1.7.1**, matches the source pin exactly.
+2. ~~Shape verification~~ — full pass done on a throwaway test vehicle; see `api-inventory.json` `meta.observedPass`. Corrections found: envelope key is `additionalData`; bad-key 401 returns an HTML login page; odometer-only reminders return `dueDate: "0001-01-01"`; blanked `notes` returns `null`; `fuelEconomy` defaults to per-100-distance when `useMPG` omitted.
+3. Auth — instance runs with auth enabled; the provided API key acts as **root**. Viewer/Editor/Manager *role downgrade* enforcement was **not** exercised (only a root key was available); source reading stands for non-root keys.
+4. ~~Locale~~ — `en-US`, `M/d/yyyy`; non-invariant dates confirmed `MM/DD/YYYY`.
+
+## Still pending
+
+- **Document upload** (`/api/documents/upload`) not yet exercised live; will be verified when the attachment support is implemented.
+- **Non-root API key role enforcement** (403 on insufficient role) — needs a Viewer/Editor key to verify; source is unambiguous.
 
 ## Genuinely unsettled / design notes
 

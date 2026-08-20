@@ -1,7 +1,7 @@
 # LubeLogger API — verified inventory
 
 **Pinned against:** LubeLogger **v1.7.1** (source commit `d5a5832045267ac3d9c31addb280c774120ab0a3`, fetched 2026-08-20).
-**Target instance version:** _pending — will be recorded from `GET /api/version` once instance credentials are provided._
+**Target instance version:** **1.7.1** (observed 2026-08-20 via `GET /api/version`; locale `en-US`, date format `M/d/yyyy`). Source pin and instance match exactly.
 
 **Spec:** LubeLogger serves its own machine-readable endpoint catalogue at `GET /api` (rendered from `wwwroot/defaults/api.json`). It is **not OpenAPI** — a custom format with paths, query params, and body samples. The v1.7.1 copy is pinned at [`docs/lubelogger-api-doc.json`](lubelogger-api-doc.json). Field-level semantics below were read from the controllers and models themselves.
 
@@ -9,7 +9,21 @@
 - **spec** — listed in the pinned `api.json`
 - **docs** — stated in [lubelog_docs](https://github.com/hargata/lubelog_docs) (docs.lubelogger.com)
 - **source** — read from the v1.7.1 controller/model code (ground truth)
-- **observed** — verified live against the target instance (_pending; nothing is marked observed yet_)
+- **observed** — verified live against the target instance (v1.7.1, 2026-08-20)
+
+**Observed pass summary (2026-08-20):** version/info/whoami, vehicle list (invariant and non-invariant), vehicle create/delete, and a full record cycle on a throwaway test vehicle — service create/read/update, gas create ×2/read/delete, odometer read + `latest`, reminder create ×2/read with urgency filter, plan create + `Done` rejection (400), tax/repair/upgrade create — all confirmed, then the test vehicle was deleted (instance restored to its original 3 vehicles). Everything in the tables below marked `spec+…+source` was exercised live except: document upload, `/all` whole-garage variants, `adjustedodometer`, `recalculate`, `taxrecords/check`, reminder update/delete verbs (delete verified on gas/vehicle; handlers are identical in source).
+
+**Corrections and additions from the observed pass:**
+- **Mutation envelope key is `additionalData`, not `data`**: `{ "success": true, "message": "…", "additionalData": { "recordId": 11 } }`.
+- **A bad API key returns 401 with a ~7 KB `text/html` body** (login page), not the empty body the source reading suggested. Unknown `/api/*` paths return 404 with an empty body. The node's non-JSON detection and 401 hint are therefore mandatory, not defensive.
+- **Non-invariant dates confirmed `MM/DD/YYYY`** (`05/30/2019`) on this en-US instance; invariant gives `2019-05-30` with real numbers/booleans.
+- **`fuelEconomy` defaults to consumption-per-100-distance** when `useMPG` is omitted (10 gal over 300 mi returned `3.333…`, not 30): the node exposes `useMPG`/`useUKMPG` on gas getAll.
+- **First/deferred gas records return `fuelEconomy: 0`.**
+- **Auto-odometer-insert side effect observed**: with the user setting on, service-record and gas-record adds each auto-created an odometer record.
+- **Odometer-only reminders return `dueDate: "0001-01-01"`** — the node normalises that sentinel to null.
+- **`notes` comes back as JSON `null`** (not `""`) after being blanked; output normalisation tolerates null strings.
+- **`startingSoc`/`endingSoc` read back as 0** on a non-EV vehicle even though the add-handler defaults are 20/80 — the GET viewmodel zeroes them for non-electric vehicles.
+- `odometerrecords/latest` returned the bare number `1300` (invariant header or not).
 
 ---
 

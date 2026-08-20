@@ -9,7 +9,27 @@
       "specFile": "docs/lubelogger-api-doc.json (pinned copy of wwwroot/defaults/api.json served at GET /api)",
       "specIsOpenApi": false,
       "fetchDate": "2026-08-20",
-      "targetInstanceVersion": "PENDING - verify via GET /api/version against the target instance"
+      "targetInstanceVersion": "1.7.1 (observed 2026-08-20; locale en-US, dateFormat M/d/yyyy; matches source pin)"
+    },
+    "observedPass": {
+      "date": "2026-08-20",
+      "method": "Throwaway test vehicle (created and deleted via API); instance restored to original state afterwards.",
+      "verifiedLive": [
+        "GET /api/version", "GET /api/info", "GET /api/whoami",
+        "GET /api/vehicles (invariant + non-invariant)", "POST /api/vehicles/add", "DELETE /api/vehicles/delete",
+        "POST/GET/PUT /api/vehicle/servicerecords[...] (incl. live confirmation of the update wipe hazard)",
+        "POST/GET/DELETE /api/vehicle/gasrecords[...] (computed fuelEconomy, required flags)",
+        "GET /api/vehicle/odometerrecords", "GET /api/vehicle/odometerrecords/latest (bare number)",
+        "POST/GET /api/vehicle/reminders[...] (computed urgency, urgencies= filter)",
+        "POST /api/vehicle/planrecords/add (incl. Done rejection with 400)",
+        "POST /api/vehicle/taxrecords/add", "POST /api/vehicle/repairrecords/add", "POST /api/vehicle/upgraderecords/add",
+        "401 shape (bad key => HTML login page)", "404 shape (empty body)"
+      ],
+      "notVerifiedLive": [
+        "POST /api/documents/upload", "the /all whole-garage GET variants", "reminder/plan/tax/repair/upgrade update+delete verbs (handlers identical to verified ones in source)",
+        "/api/vehicle/adjustedodometer", "/api/vehicle/odometerrecords/recalculate", "/api/vehicle/taxrecords/check", "/api/calendar", "root admin endpoints"
+      ],
+      "interpretation": "Endpoints in verifiedLive have confirmation spec+source+observed even where the per-entry 'confirmed' array below predates the pass."
     },
     "confirmationLegend": {
       "spec": "listed in LubeLogger's own machine-readable api.json (served at /api)",
@@ -42,10 +62,10 @@
       "invariantHeader": "Send header 'culture-invariant' (presence only, no value) => dates serialize as yyyy-MM-dd, numerics as JSON numbers, booleans as JSON booleans. Without it everything is a locale-formatted string. (docs + source: TypeConverter.cs, StaticHelper.GetInvariantOption)",
       "dateInput": "Body/query dates parsed with server-culture DateTime.Parse; ISO yyyy-MM-dd is unambiguous in every .NET culture and is what the node always sends. Unix epoch seconds also accepted for JSON number date fields (source: FromDateOptional.Read).",
       "postPutEncoding": "JSON (Consumes application/json), form-data, or x-www-form-urlencoded. Node uses JSON.",
-      "mutationEnvelope": "Mutations return OperationResponse { success: bool, message: string, data?: object }. add returns data.recordId (data.vehicleId for vehicles). GETs return bare arrays/objects.",
+      "mutationEnvelope": "OBSERVED: mutations return OperationResponse { success: bool, message: string, additionalData?: object }. add returns additionalData.recordId (additionalData.vehicleId for vehicles). GETs return bare arrays (bare number for odometerrecords/latest).",
       "updateIsFullReplace": "CONFIRMED DATA-LOSS HAZARD (source: every API update handler): update replaces the entire record. Omitted extraFields, files, tags, notes are overwritten with empty values. The node therefore does read-merge-write on update.",
       "pagination": "NONE on any endpoint. Controllers materialize the full record list and filter in memory (source: all API controllers). Node offers client-side limit only.",
-      "errorShape": "Failures return OperationResponse JSON with 400/403/500. 401 is empty-bodied. Unknown paths and reverse-proxy errors can return HTML; the node detects non-JSON bodies.",
+      "errorShape": "OBSERVED: failures return OperationResponse JSON with 400/403/500; a BAD API KEY returns 401 with an HTML login page (~7KB text/html); unknown /api paths return 404 with empty body. The node detects non-JSON bodies and maps 401 to a credentials hint.",
       "units": "Odometer/fuel-volume units are the instance's configured units (Use Imperial Calculation / Use UK MPG Calculation user settings). NOT exposed by /api/info (source: ServerInformation.cs = version, locale, currencySymbol, decimalSeparator, dateFormat only). The node does not convert units.",
       "webhooks": "LubeLogger DOES have an outgoing webhook (single server-wide URL set manually in Server Settings) and a SignalR WebSocket at /api/ws. Neither is API-registrable per workflow, so the trigger node polls. (docs: Advanced/Webhook.md; source: Logic/Event)"
     }
