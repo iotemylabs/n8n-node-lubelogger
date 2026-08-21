@@ -54,7 +54,7 @@ export class LubeLoggerTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'LubeLogger Trigger',
 		name: 'lubeLoggerTrigger',
-		icon: { light: 'file:lubelogger.svg', dark: 'file:lubelogger.dark.svg' },
+		icon: 'file:lubelogger.svg',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{$parameter["event"]}}',

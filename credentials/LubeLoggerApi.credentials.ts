@@ -13,10 +13,7 @@ export class LubeLoggerApi implements ICredentialType {
 
 	displayName = 'LubeLogger API';
 
-	icon: Icon = {
-		light: 'file:../nodes/LubeLogger/lubelogger.svg',
-		dark: 'file:../nodes/LubeLogger/lubelogger.dark.svg',
-	};
+	icon: Icon = 'file:../nodes/LubeLogger/lubelogger.svg';
 
 	documentationUrl = 'https://docs.lubelogger.com/Advanced/API';
 

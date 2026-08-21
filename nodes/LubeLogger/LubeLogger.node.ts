@@ -15,7 +15,7 @@ export class LubeLogger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'LubeLogger',
 		name: 'lubeLogger',
-		icon: { light: 'file:lubelogger.svg', dark: 'file:lubelogger.dark.svg' },
+		icon: 'file:lubelogger.svg',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
